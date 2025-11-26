@@ -38,14 +38,22 @@ HIGH_FREQ_AREAS = ["음운", "단어", "문장", "문법요소", "중세국어"]
 
 
 # ---------------- 유틸 함수: 파일 로딩/저장 ----------------
-@st.cache_data
 def load_questions():
+    # 1) 파일 존재 여부 확인
     if not QUESTIONS_FILE.exists():
         st.error("문제 파일 questions.csv 를 찾을 수 없습니다. 리포지토리에 업로드해 주세요.")
         return pd.DataFrame()
-    df = pd.read_csv(QUESTIONS_FILE)
 
-    # ★★ 여기서 실제 컬럼 이름을 표준 이름으로 맞춰줌 ★★
+    # 2) 인코딩 문제(BOM) 방지를 위해 utf-8-sig 먼저 시도, 안 되면 euc-kr
+    try:
+        df = pd.read_csv(QUESTIONS_FILE, encoding="utf-8-sig")
+    except UnicodeDecodeError:
+        df = pd.read_csv(QUESTIONS_FILE, encoding="euc-kr")
+
+    # 3) 컬럼 이름에서 공백·BOM 제거
+    df.columns = [c.strip().replace("\ufeff", "") for c in df.columns]
+
+    # 4) 실제 컬럼 이름을 표준 이름으로 맞추기
     rename_map = {
         "난이도": "난도",
         "보기1": "선지1",
@@ -55,12 +63,14 @@ def load_questions():
     }
     df = df.rename(columns=rename_map)
 
-    # 기본적인 컬럼 확인 (표준 이름 기준)
+    # 5) 필수 컬럼이 모두 있는지 확인
     required_cols = ["문항ID", "영역", "난도", "문제",
                      "선지1", "선지2", "선지3", "선지4", "정답", "해설"]
     missing = [c for c in required_cols if c not in df.columns]
+
     if missing:
         st.error(f"questions.csv 에 다음 컬럼이 필요합니다: {missing}")
+        st.write("현재 CSV 컬럼 목록:", list(df.columns))
         return pd.DataFrame()
 
     return df
@@ -684,7 +694,7 @@ else:
                     correct=("정답여부", "sum")
                 )
                 area_stat["정답률(%)"] = area_stat["correct"] / area_stat["total"] * 100
-                st.dataframe(area_stat.sort_values("정답률(%)", descending=False))
+                st.dataframe(area_stat.sort_values("정답률(%)", ascending=True))
 
 # ---------------- 화면 좌측 하단 '제작자' 표시 ----------------
 st.markdown(
