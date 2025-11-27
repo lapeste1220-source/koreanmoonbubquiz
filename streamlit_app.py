@@ -38,22 +38,14 @@ HIGH_FREQ_AREAS = ["음운", "단어", "문장", "문법요소", "중세국어"]
 
 
 # ---------------- 유틸 함수: 파일 로딩/저장 ----------------
+@st.cache_data
 def load_questions():
-    # 1) 파일 존재 여부 확인
     if not QUESTIONS_FILE.exists():
         st.error("문제 파일 questions.csv 를 찾을 수 없습니다. 리포지토리에 업로드해 주세요.")
         return pd.DataFrame()
+    df = pd.read_csv(QUESTIONS_FILE)
 
-    # 2) 인코딩 문제(BOM) 방지를 위해 utf-8-sig 먼저 시도, 안 되면 euc-kr
-    try:
-        df = pd.read_csv(QUESTIONS_FILE, encoding="utf-8-sig")
-    except UnicodeDecodeError:
-        df = pd.read_csv(QUESTIONS_FILE, encoding="euc-kr")
-
-    # 3) 컬럼 이름에서 공백·BOM 제거
-    df.columns = [c.strip().replace("\ufeff", "") for c in df.columns]
-
-    # 4) 실제 컬럼 이름을 표준 이름으로 맞추기
+    # CSV 실제 헤더를 표준 이름으로 맞추기
     rename_map = {
         "난이도": "난도",
         "보기1": "선지1",
@@ -63,14 +55,12 @@ def load_questions():
     }
     df = df.rename(columns=rename_map)
 
-    # 5) 필수 컬럼이 모두 있는지 확인
     required_cols = ["문항ID", "영역", "난도", "문제",
                      "선지1", "선지2", "선지3", "선지4", "정답", "해설"]
     missing = [c for c in required_cols if c not in df.columns]
-
     if missing:
         st.error(f"questions.csv 에 다음 컬럼이 필요합니다: {missing}")
-        st.write("현재 CSV 컬럼 목록:", list(df.columns))
+        st.write("현재 CSV 컬럼 목록:", [str(c) for c in df.columns.tolist()])
         return pd.DataFrame()
 
     return df
@@ -192,7 +182,10 @@ def start_new_session():
     init_quiz_state()
     st.session_state["quiz_in_progress"] = True
     st.session_state["quiz_start_time"] = datetime.datetime.now()
-    st.session_state["current_session_id"] = f"{st.session_state['username']}_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
+    st.session_state["current_session_id"] = (
+        f"{st.session_state['username']}_"
+        f"{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
+    )
 
 
 def select_next_question(df_q, username):
@@ -472,7 +465,7 @@ else:
                 st.write("버튼을 눌러 새 회차 퀴즈를 시작하세요.")
                 if st.button("퀴즈 도전 시작"):
                     start_new_session()
-                    st.experimental_rerun()
+                    st.rerun()
             else:
                 st.markdown("### 국어 문법 퀴즈 진행 중")
 
@@ -522,7 +515,7 @@ else:
                     else:
                         st.session_state["current_question"] = q_row.to_dict()
                         st.session_state["current_question_start"] = datetime.datetime.now()
-                        st.experimental_rerun()
+                        st.rerun()
 
                 if st.session_state["current_question"] is not None:
                     q = st.session_state["current_question"]
@@ -566,7 +559,7 @@ else:
                                 if next_btn:
                                     st.session_state["current_question"] = None
                                     st.session_state["current_question_start"] = None
-                                    st.experimental_rerun()
+                                    st.rerun()
                             else:
                                 result_placeholder.error("틀렸습니다. 정답과 해설을 확인하세요.")
                                 explanation_placeholder.info(
@@ -575,7 +568,7 @@ else:
                                 if st.button("다음 문제로"):
                                     st.session_state["current_question"] = None
                                     st.session_state["current_question_start"] = None
-                                    st.experimental_rerun()
+                                    st.rerun()
 
                             if st.session_state["quiz_score"] >= 100:
                                 finalize_session(username)
@@ -600,7 +593,7 @@ else:
                             if st.button("다음 문제로 이동"):
                                 st.session_state["current_question"] = None
                                 st.session_state["current_question_start"] = None
-                                st.experimental_rerun()
+                                st.rerun()
 
                     with col_btn3:
                         if st.button("그만 풀게요"):
@@ -694,7 +687,7 @@ else:
                     correct=("정답여부", "sum")
                 )
                 area_stat["정답률(%)"] = area_stat["correct"] / area_stat["total"] * 100
-                st.dataframe(area_stat.sort_values("정답률(%)", ascending=True))
+                st.dataframe(area_stat.sort_values("정답률(%)", ascending=False))
 
 # ---------------- 화면 좌측 하단 '제작자' 표시 ----------------
 st.markdown(
