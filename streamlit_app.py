@@ -17,36 +17,35 @@ st.caption("로그인 후 퀴즈에 도전하고, 국어 문법 실력을 진단
 
 TODAY_STR = datetime.date.today().isoformat()
 
-# 파일 경로 설정
+# ---------------- 파일 경로 ----------------
 QUESTIONS_FILE = Path("questions.csv")
 USERS_FILE = Path("users.csv")
-QUIZ_LOG_FILE = Path("quiz_log.csv")
-QUIZ_SESSIONS_FILE = Path("quiz_sessions.csv")
+QUIZ_LOG_FILE = Path("quiz_log.csv")          # 문항별 풀이 기록
+QUIZ_SESSIONS_FILE = Path("quiz_sessions.csv")  # 회차별 기록
 
-# 관리자 비밀번호 (관리자 메뉴 접속용)
+# 관리자 비밀번호
 ADMIN_MENU_PASSWORD = "grammarAdmin123"
 
 # 난도별 점수
-DIFFICULTY_SCORE = {
-    "상": 3,
-    "중": 2,
-    "하": 1
-}
+DIFFICULTY_SCORE = {"상": 3, "중": 2, "하": 1}
 
-# 출제 비중이 높은 영역
-HIGH_FREQ_AREAS = ["음운", "단어", "문장", "문법요소", "중세국어"]
+# 출제 비중을 높일 영역
+HIGH_FREQ_AREAS = ["음운", "단어·형태소", "문장·문법요소", "중세국어"]
 
 
-# ---------------- 유틸 함수: 파일 로딩/저장 ----------------
+# =========================================================
+# 1. 데이터 로딩 / 저장 유틸
+# =========================================================
 @st.cache_data
-def load_questions():
+def load_questions() -> pd.DataFrame:
+    """questions.csv 읽고, 필요한 열 이름/형태 정리."""
     if not QUESTIONS_FILE.exists():
         st.error("문제 파일 questions.csv 를 찾을 수 없습니다. 리포지토리에 업로드해 주세요.")
         return pd.DataFrame()
 
     df = pd.read_csv(QUESTIONS_FILE)
 
-    # 실제 CSV 헤더를 표준 이름으로 맞춰주기
+    # 기존 다른 이름을 표준 이름으로 맞추기
     rename_map = {
         "난이도": "난도",
         "보기1": "선지1",
@@ -56,59 +55,68 @@ def load_questions():
     }
     df = df.rename(columns=rename_map)
 
-    required_cols = ["문항ID", "영역", "난도", "문제",
-                     "선지1", "선지2", "선지3", "선지4", "정답", "해설"]
+    required_cols = [
+        "영역", "세부영역", "난도", "문항ID", "문제",
+        "선지1", "선지2", "선지3", "선지4", "정답", "해설"
+    ]
     missing = [c for c in required_cols if c not in df.columns]
     if missing:
         st.error(f"questions.csv 에 다음 컬럼이 필요합니다: {missing}")
         st.write("현재 CSV 컬럼 목록:", list(df.columns))
         return pd.DataFrame()
 
+    # 정답은 숫자(1~4)로 맞춰 두는 게 안전
+    df["정답"] = pd.to_numeric(df["정답"], errors="coerce").astype("Int64")
+
     return df
 
 
-def load_users():
+def load_users() -> pd.DataFrame:
     if USERS_FILE.exists():
         return pd.read_csv(USERS_FILE, dtype={"username": str, "student_id": str})
-    else:
-        return pd.DataFrame(columns=["username", "password_hash",
-                                     "student_id", "name", "email", "is_admin"])
+    return pd.DataFrame(
+        columns=["username", "password_hash", "student_id", "name", "email", "is_admin"]
+    )
 
 
-def save_users(df_users):
+def save_users(df_users: pd.DataFrame):
     df_users.to_csv(USERS_FILE, index=False, encoding="utf-8-sig")
 
 
-def load_quiz_log():
+def load_quiz_log() -> pd.DataFrame:
     if QUIZ_LOG_FILE.exists():
         return pd.read_csv(QUIZ_LOG_FILE)
-    else:
-        return pd.DataFrame(columns=[
+    return pd.DataFrame(
+        columns=[
             "username", "session_id", "문항ID", "정답여부",
             "난도", "영역", "득점", "풀이시간초", "응시일"
-        ])
+        ]
+    )
 
 
-def save_quiz_log(df_log):
+def save_quiz_log(df_log: pd.DataFrame):
     df_log.to_csv(QUIZ_LOG_FILE, index=False, encoding="utf-8-sig")
 
 
-def load_quiz_sessions():
+def load_quiz_sessions() -> pd.DataFrame:
     if QUIZ_SESSIONS_FILE.exists():
         return pd.read_csv(QUIZ_SESSIONS_FILE)
-    else:
-        return pd.DataFrame(columns=[
+    return pd.DataFrame(
+        columns=[
             "username", "session_id",
             "총점", "총문항수", "정답수",
             "정답률", "총풀이시간초", "시작시각", "종료시각"
-        ])
+        ]
+    )
 
 
-def save_quiz_sessions(df_sessions):
+def save_quiz_sessions(df_sessions: pd.DataFrame):
     df_sessions.to_csv(QUIZ_SESSIONS_FILE, index=False, encoding="utf-8-sig")
 
 
-# ---------------- 유틸: 비밀번호 해시 ----------------
+# =========================================================
+# 2. 회원 관리 유틸
+# =========================================================
 SALT = "hamchang-grammar-salt"
 
 
@@ -116,7 +124,6 @@ def hash_password(password: str) -> str:
     return hashlib.sha256((password + SALT).encode("utf-8")).hexdigest()
 
 
-# ---------------- 회원 관리 ----------------
 def register_user(username, password, student_id, name, email):
     df_users = load_users()
     if username in df_users["username"].values:
@@ -130,7 +137,7 @@ def register_user(username, password, student_id, name, email):
         "student_id": str(student_id),
         "name": name,
         "email": email,
-        "is_admin": False
+        "is_admin": False,
     }
     df_users = pd.concat([df_users, pd.DataFrame([new_row])], ignore_index=True)
     save_users(df_users)
@@ -167,9 +174,11 @@ def delete_user(target_username):
     return True, "해당 회원 정보가 삭제되었습니다."
 
 
-# ---------------- 퀴즈 관련 유틸 ----------------
+# =========================================================
+# 3. 퀴즈 상태 관리 & 기록 유틸
+# =========================================================
 def init_quiz_state():
-    """퀴즈 관련 모든 세션 상태를 완전히 초기화."""
+    """퀴즈 관련 상태 전부 초기화."""
     st.session_state["quiz_in_progress"] = False
     st.session_state["current_question"] = None
     st.session_state["current_session_id"] = None
@@ -179,22 +188,19 @@ def init_quiz_state():
     st.session_state["quiz_area_stats"] = {}
     st.session_state["quiz_start_time"] = None
     st.session_state["current_question_start"] = None
-    # ➜ 새 회차 시작 시 이전 문항 상태가 남지 않도록 초기화
-    st.session_state["answered_current"] = False
-    st.session_state["last_choice"] = None
+    st.session_state["last_submit_state"] = None  # 최근 채점 정보
 
 
 def start_new_session():
     init_quiz_state()
     st.session_state["quiz_in_progress"] = True
     st.session_state["quiz_start_time"] = datetime.datetime.now()
-    st.session_state["current_session_id"] = (
-        f"{st.session_state['username']}_"
-        f"{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
-    )
+    sid = f"{st.session_state['username']}_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
+    st.session_state["current_session_id"] = sid
 
 
-def select_next_question(df_q, username):
+def select_next_question(df_q: pd.DataFrame, username: str):
+    """틀린 문제/안 푼 문제를 우선, 고빈도 영역 가중치를 적용하여 한 문제 선택."""
     if df_q.empty:
         return None
 
@@ -202,19 +208,13 @@ def select_next_question(df_q, username):
     user_log = df_log[df_log["username"] == username]
 
     all_ids = df_q["문항ID"].tolist()
-
     if not user_log.empty:
-        last_status = (
-            user_log.sort_values("응시일")
-            .groupby("문항ID")["정답여부"]
-            .last()
-        )
+        last_status = user_log.sort_values("응시일").groupby("문항ID")["정답여부"].last()
     else:
         last_status = pd.Series(dtype=float)
 
     unseen_ids = [qid for qid in all_ids if qid not in last_status.index]
-    wrong_ids = [qid for qid, correct in last_status.items() if correct == 0]
-
+    wrong_ids = [qid for qid, ok in last_status.items() if ok == 0]
     candidate_ids = list(set(unseen_ids + wrong_ids))
     if not candidate_ids:
         candidate_ids = all_ids
@@ -224,11 +224,11 @@ def select_next_question(df_q, username):
     weights = []
     for _, row in df_candidates.iterrows():
         area = str(row["영역"])
-        base_w = 2 if area in HIGH_FREQ_AREAS else 1
-        weights.append(base_w)
+        w = 2 if area in HIGH_FREQ_AREAS else 1
+        weights.append(w)
 
     total_w = sum(weights)
-    if total_w == 0:
+    if total_w <= 0:
         idx = random.choice(df_candidates.index.tolist())
     else:
         r = random.uniform(0, total_w)
@@ -244,7 +244,7 @@ def select_next_question(df_q, username):
     return df_candidates.loc[idx]
 
 
-def update_area_stats(area, correct):
+def update_area_stats(area: str, correct: bool):
     stats = st.session_state.get("quiz_area_stats", {})
     if area not in stats:
         stats[area] = {"total": 0, "correct": 0}
@@ -254,11 +254,11 @@ def update_area_stats(area, correct):
     st.session_state["quiz_area_stats"] = stats
 
 
-def record_question_result(username, question_row, correct, elapsed_sec):
+def record_question_result(username, question_row, correct: bool, elapsed_sec: float):
     df_log = load_quiz_log()
     diff = str(question_row["난도"])
     area = str(question_row["영역"])
-    점수 = DIFFICULTY_SCORE.get(diff, 1) if correct else 0
+    score = DIFFICULTY_SCORE.get(diff, 1) if correct else 0
 
     new_row = {
         "username": username,
@@ -267,15 +267,16 @@ def record_question_result(username, question_row, correct, elapsed_sec):
         "정답여부": 1 if correct else 0,
         "난도": diff,
         "영역": area,
-        "득점": 점수,
-        "풀이시간초": elapsed_sec,
-        "응시일": datetime.datetime.now().isoformat()
+        "득점": score,
+        "풀이시간초": float(elapsed_sec),
+        "응시일": datetime.datetime.now().isoformat(),
     }
     df_log = pd.concat([df_log, pd.DataFrame([new_row])], ignore_index=True)
     save_quiz_log(df_log)
 
 
 def finalize_session(username):
+    """현재 회차 성적을 요약하여 quiz_sessions.csv 에 저장."""
     sid = st.session_state.get("current_session_id")
     if not sid:
         return
@@ -285,38 +286,33 @@ def finalize_session(username):
     if sess_logs.empty:
         return
 
-    총점 = sess_logs["득점"].sum()
-    총문항수 = len(sess_logs)
-    정답수 = sess_logs["정답여부"].sum()
-    정답률 = (정답수 / 총문항수) * 100 if 총문항수 > 0 else 0
+    total_score = sess_logs["득점"].sum()
+    total_q = len(sess_logs)
+    correct = sess_logs["정답여부"].sum()
+    acc = (correct / total_q) * 100 if total_q > 0 else 0
 
-    시작시각 = st.session_state.get("quiz_start_time", datetime.datetime.now())
-    종료시각 = datetime.datetime.now()
-    if isinstance(시작시각, str):
-        try:
-            시작시각 = datetime.datetime.fromisoformat(시작시각)
-        except Exception:
-            시작시각 = datetime.datetime.now()
-
-    총풀이시간초 = (종료시각 - 시작시각).total_seconds()
+    start_time = st.session_state.get("quiz_start_time", datetime.datetime.now())
+    end_time = datetime.datetime.now()
+    total_sec = (end_time - start_time).total_seconds()
 
     df_sess = load_quiz_sessions()
     new_row = {
         "username": username,
         "session_id": sid,
-        "총점": 총점,
-        "총문항수": 총문항수,
-        "정답수": 정답수,
-        "정답률": 정답률,
-        "총풀이시간초": 총풀이시간초,
-        "시작시각": 시작시각.isoformat(),
-        "종료시각": 종료시각.isoformat()
+        "총점": total_score,
+        "총문항수": total_q,
+        "정답수": correct,
+        "정답률": acc,
+        "총풀이시간초": total_sec,
+        "시작시각": start_time.isoformat(),
+        "종료시각": end_time.isoformat(),
     }
     df_sess = pd.concat([df_sess, pd.DataFrame([new_row])], ignore_index=True)
     save_quiz_sessions(df_sess)
 
 
 def get_high_achiever_avg_time():
+    """80점 이상 & 정답률 80% 이상 학생들의 평균 풀이시간(문항당)"""
     df_sess = load_quiz_sessions()
     if df_sess.empty:
         return None
@@ -331,7 +327,9 @@ def get_high_achiever_avg_time():
     return per_q.mean()
 
 
-# ---------------- 세션 상태 초기화 ----------------
+# =========================================================
+# 4. 세션 상태 초기화
+# =========================================================
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
 if "username" not in st.session_state:
@@ -340,11 +338,12 @@ if "name" not in st.session_state:
     st.session_state["name"] = None
 if "is_admin_menu" not in st.session_state:
     st.session_state["is_admin_menu"] = False
-
 if "quiz_in_progress" not in st.session_state:
     init_quiz_state()
 
-# ---------------- 사이드바: 로그인 / 회원가입 / 관리자 ----------------
+# =========================================================
+# 5. 사이드바: 로그인 / 회원가입 / 관리자
+# =========================================================
 with st.sidebar:
     st.header("회원 / 관리자")
 
@@ -401,22 +400,22 @@ with st.sidebar:
                 else:
                     st.session_state["is_admin_menu"] = False
                     st.error("관리자 비밀번호가 올바르지 않습니다.")
-
     else:
         st.markdown(f"**로그인 중:** {st.session_state['name']} ({st.session_state['username']})")
         if st.button("로그아웃"):
             st.session_state["logged_in"] = False
             st.session_state["username"] = None
             st.session_state["name"] = None
-            st.session_state["is_admin_menu"] = False
             init_quiz_state()
+            st.session_state["is_admin_menu"] = False
             st.success("로그아웃되었습니다.")
             st.rerun()
 
-# ---------------- 메인 영역 ----------------
+# =========================================================
+# 6. 관리자 메인 메뉴 (로그/회원 확인)
+# =========================================================
 questions_df = load_questions()
 
-# ---- 관리자 메뉴 ----
 if st.session_state["is_admin_menu"]:
     st.markdown("---")
     st.subheader("관리자 메뉴")
@@ -463,7 +462,9 @@ if st.session_state["is_admin_menu"]:
         else:
             st.dataframe(quiz_log_df)
 
-# ---- 로그인 안 된 경우 ----
+# =========================================================
+# 7. 메인 영역 (로그인 전/후 UI)
+# =========================================================
 if not st.session_state["logged_in"]:
     st.markdown("---")
     st.info("좌측 사이드바에서 **로그인 또는 회원가입**을 먼저 진행해 주세요.")
@@ -477,74 +478,69 @@ else:
 
     username = st.session_state["username"]
 
-    # ------------- 메뉴 1: 퀴즈 도전 -------------
+    # -----------------------------------------------------
+    # 7-1. 퀴즈 도전
+    # -----------------------------------------------------
     if menu == "퀴즈 도전":
         if questions_df.empty:
             st.error("문제 데이터가 없습니다. 관리자에게 문의해 주세요.")
         else:
-            # 퀴즈가 아직 시작 안 된 경우
+            # 퀴즈 시작 전
             if not st.session_state["quiz_in_progress"]:
                 st.markdown("### 국어 문법 퀴즈 도전")
                 st.write("버튼을 눌러 새 회차 퀴즈를 시작하세요.")
                 if st.button("퀴즈 도전 시작"):
                     start_new_session()
                     st.rerun()
+            # 퀴즈 진행 중
             else:
-                # 진행 중 화면
                 st.markdown("### 국어 문법 퀴즈 진행 중")
 
-                col_left, col_right = st.columns([1, 2])
+                # 상단 요약 정보
+                col1, col2, col3, col4 = st.columns(4)
 
-                with col_left:
-                    # 전체 타이머
-                    quiz_start = st.session_state.get("quiz_start_time")
-                    if isinstance(quiz_start, str):
-                        try:
-                            quiz_start = datetime.datetime.fromisoformat(quiz_start)
-                            st.session_state["quiz_start_time"] = quiz_start
-                        except Exception:
-                            quiz_start = None
-                    if isinstance(quiz_start, datetime.datetime):
-                        elapsed_total = datetime.datetime.now() - quiz_start
-                        total_sec = int(elapsed_total.total_seconds())
-                        mm_total, ss_total = divmod(total_sec, 60)
+                # 전체 경과 시간
+                with col1:
+                    start_time = st.session_state.get("quiz_start_time")
+                    if isinstance(start_time, datetime.datetime):
+                        elapsed = datetime.datetime.now() - start_time
+                        total_sec = int(elapsed.total_seconds())
+                        mm = total_sec // 60
+                        ss = total_sec % 60
                     else:
-                        mm_total, ss_total = 0, 0
-
-                    st.markdown(f"**전체 퀴즈 경과 시간:** {mm_total:02d}분 {ss_total:02d}초")
-
-                    # 문항별 타이머
-                    q_start = st.session_state.get("current_question_start")
-                    if isinstance(q_start, str):
-                        try:
-                            q_start = datetime.datetime.fromisoformat(q_start)
-                            st.session_state["current_question_start"] = q_start
-                        except Exception:
-                            q_start = None
-                    if isinstance(q_start, datetime.datetime):
-                        elapsed_q = datetime.datetime.now() - q_start
-                        q_sec = int(elapsed_q.total_seconds())
-                    else:
-                        q_sec = 0
-                    mm_q, ss_q = divmod(q_sec, 60)
-                    st.markdown(f"**현재 문항 경과 시간(기록 기준):** {mm_q:02d}분 {ss_q:02d}초")
+                        mm, ss = 0, 0
+                    st.markdown(f"**전체 퀴즈 경과 시간:** {mm:02d}분 {ss:02d}초")
 
                     avg_time = get_high_achiever_avg_time()
                     if avg_time is not None:
-                        st.caption(f"우수 성취 학생(80점·정답률 80% 이상)의 평균 문제 해결 시간: "
-                                   f"약 {avg_time:.1f}초/문항")
+                        st.caption(f"우수 성취 학생 평균 풀이시간: 약 {avg_time:.1f}초/문항")
                     else:
                         st.caption("우수 성취 학생 데이터가 아직 부족합니다.")
 
-                with col_right:
+                # 현재 문항 스톱워치
+                with col2:
+                    q_start = st.session_state.get("current_question_start")
+                    if isinstance(q_start, datetime.datetime):
+                        elapsed_q = datetime.datetime.now() - q_start
+                        qs = int(elapsed_q.total_seconds())
+                        q_mm = qs // 60
+                        q_ss = qs % 60
+                    else:
+                        q_mm, q_ss = 0, 0
+                    st.markdown(f"**현재 문항 경과 시간:** {q_mm:02d}분 {q_ss:02d}초")
+
+                # 점수/정답률
+                with col3:
                     score = st.session_state["quiz_score"]
                     total = st.session_state["quiz_total_count"]
                     correct = st.session_state["quiz_correct_count"]
                     acc = (correct / total * 100) if total > 0 else 0
                     st.markdown(f"**현재 점수:** {score}점")
-                    st.markdown(f"**푼 문제 수:** {total}문항 / 맞힌 문항: {correct}문항")
+                    st.markdown(f"**푼 문제 수:** {total}문항 / 맞힌 문제: {correct}문항")
                     st.markdown(f"**정답률:** {acc:.1f}%")
 
+                # 영역별 통계
+                with col4:
                     area_stats = st.session_state.get("quiz_area_stats", {})
                     if area_stats:
                         rows = []
@@ -552,18 +548,22 @@ else:
                             t = stat["total"]
                             c = stat["correct"]
                             a = (c / t * 100) if t > 0 else 0
-                            rows.append({
-                                "영역": area,
-                                "푼 문항수": t,
-                                "맞힌 문항수": c,
-                                "정답률(%)": round(a, 1)
-                            })
+                            rows.append(
+                                {
+                                    "영역": area,
+                                    "푼 문항수": t,
+                                    "맞힌 문항수": c,
+                                    "정답률(%)": round(a, 1),
+                                }
+                            )
                         df_area = pd.DataFrame(rows)
                         st.dataframe(df_area, use_container_width=True)
+                    else:
+                        st.write("아직 푼 문제가 없습니다.")
 
                 st.markdown("---")
 
-                # 현재 문항이 없으면 새 문항 선택
+                # 현재 문항 없으면 새로 뽑기
                 if st.session_state["current_question"] is None:
                     q_row = select_next_question(questions_df, username)
                     if q_row is None:
@@ -572,167 +572,116 @@ else:
                     else:
                         st.session_state["current_question"] = q_row.to_dict()
                         st.session_state["current_question_start"] = datetime.datetime.now()
+                        st.session_state["last_submit_state"] = None
                         st.rerun()
 
-                # 문항 표시 및 풀이
+                # 문항 표시
                 if st.session_state["current_question"] is not None:
                     q = st.session_state["current_question"]
+
                     st.markdown(
-                        f"**문항ID:** {q['문항ID']} | **영역:** {q['영역']} | **난도:** {q['난도']}"
+                        f"**문항ID:** {q['문항ID']}  |  **영역:** {q['영역']}  |  **난도:** {q['난도']}"
                     )
                     st.write("")
                     st.markdown(f"#### 문제\n{q['문제']}")
 
                     options = [q["선지1"], q["선지2"], q["선지3"], q["선지4"]]
+                    user_choice = st.radio(
+                        "정답을 고르세요.",
+                        options=list(range(1, 5)),
+                        format_func=lambda x: f"{x}. {options[x-1]}",
+                        key="current_choice",
+                    )
 
-                    # 이미 정답 제출을 했는지 여부
-                    answered = st.session_state.get("answered_current", False)
-
-                    if not answered:
-                        user_choice = st.radio(
-                            "정답을 고르세요.",
-                            options=list(range(1, 5)),
-                            format_func=lambda x: f"{x}. {options[x-1]}",
-                            key="current_choice"
-                        )
-                    else:
-                        # 이미 정답 제출 후에는 선택 불가능하게
-                        user_choice = st.session_state.get("last_choice", 1) or 1
-                        st.radio(
-                            "정답을 고르세요.",
-                            options=list(range(1, 5)),
-                            index=user_choice - 1,
-                            disabled=True,
-                            format_func=lambda x: f"{x}. {options[x-1]}",
-                            key="current_choice_disabled"
-                        )
-
-                    col_btn1, col_btn2, col_btn3 = st.columns(3)
                     result_placeholder = st.empty()
                     explanation_placeholder = st.empty()
-                    next_button_placeholder = st.empty()
 
-                    def go_next_question():
-                        st.session_state["current_question"] = None
-                        st.session_state["current_question_start"] = None
-                        st.session_state["answered_current"] = False
-                        st.session_state["last_choice"] = None
-                        st.rerun()
+                    col_btn1, col_btn2, col_btn3 = st.columns(3)
 
-                    # ---- 정답 제출 버튼 ----
+                    # --------- 정답 제출 ---------
                     with col_btn1:
-                        if st.button("정답 제출", disabled=answered):
+                        if st.button("정답 제출"):
                             correct_answer = int(q["정답"])
                             is_correct = (user_choice == correct_answer)
+
                             now = datetime.datetime.now()
-                            q_start = st.session_state.get("current_question_start", now)
-                            if isinstance(q_start, str):
-                                try:
-                                    q_start = datetime.datetime.fromisoformat(q_start)
-                                except Exception:
-                                    q_start = now
-                            elapsed_q = (now - q_start).total_seconds()
+                            q_start = st.session_state.get("current_question_start")
+                            if isinstance(q_start, datetime.datetime):
+                                elapsed_q = (now - q_start).total_seconds()
+                            else:
+                                elapsed_q = 0.0
 
                             record_question_result(username, q, is_correct, elapsed_q)
                             update_area_stats(q["영역"], is_correct)
+
                             st.session_state["quiz_total_count"] += 1
-                            st.session_state["answered_current"] = True
-                            st.session_state["last_choice"] = user_choice
                             if is_correct:
                                 st.session_state["quiz_correct_count"] += 1
                                 st.session_state["quiz_score"] += DIFFICULTY_SCORE.get(
                                     str(q["난도"]), 1
                                 )
 
-                            if is_correct:
+                            # 최근 제출 상태 저장 (설명/다음문제 버튼을 위한 정보)
+                            st.session_state["last_submit_state"] = {
+                                "is_correct": is_correct,
+                                "options": options,
+                            }
+
+                        # 제출 후 결과/해설 표시
+                        submit_state = st.session_state.get("last_submit_state")
+                        if submit_state is not None:
+                            if submit_state["is_correct"]:
                                 result_placeholder.success("정답입니다! 👏")
-                                # 해설 버튼 + 다음문제 버튼 동시에 제공
-                                if st.button("찍었으면 풀이 확인", key="show_explain_after_correct"):
-                                    explanation_placeholder.info(f"해설:\n\n{q['해설']}")
-                                next_button_placeholder.button(
-                                    "확실히 이해하고 풀었어요 다음문제로",
-                                    on_click=go_next_question,
-                                    key="next_after_correct"
-                                )
                             else:
                                 result_placeholder.error("틀렸습니다. 정답과 해설을 확인하세요.")
-                                explanation_placeholder.info(
-                                    f"정답: {q['정답']}번 - {options[int(q['정답'])-1]}\n\n"
-                                    f"해설:\n\n{q['해설']}"
-                                )
-                                next_button_placeholder.button(
-                                    "다음 문제로",
-                                    on_click=go_next_question,
-                                    key="next_after_wrong"
-                                )
 
-                            # 회차 완료 체크
-                            score = st.session_state["quiz_score"]
-                            total = st.session_state["quiz_total_count"]
-                            correct = st.session_state["quiz_correct_count"]
-                            acc = (correct / total * 100) if total > 0 else 0
+                            # 해설 표시
+                            ca = int(q["정답"])
+                            explanation_placeholder.info(
+                                f"정답: {ca}번 - {options[ca-1]}\n\n해설:\n\n{q['해설']}"
+                            )
 
-                            if score >= 100:
-                                finalize_session(username)
-                                init_quiz_state()
-                                st.success("100점을 달성했습니다. 수고했습니다. 다음 회차에 도전하세요.")
-                                if score >= 80 and acc >= 80:
-                                    st.success("축하합니다 우수 성취학생으로 선정합니다. "
-                                               "박호종 선생님에게 뛰어가 간식을 사달라 하세요!")
-                                if st.button("첫 화면으로 돌아가기", key="back_after_100"):
-                                    st.rerun()
-
-                    # ---- 모르겠어요 ----
+                    # --------- 모르겠어요 (정답 보기) ---------
                     with col_btn2:
-                        if st.button("모르겠어요 (정답 보기)", disabled=answered):
+                        if st.button("모르겠어요 (정답 보기)"):
                             now = datetime.datetime.now()
-                            q_start = st.session_state.get("current_question_start", now)
-                            if isinstance(q_start, str):
-                                try:
-                                    q_start = datetime.datetime.fromisoformat(q_start)
-                                except Exception:
-                                    q_start = now
-                            elapsed_q = (now - q_start).total_seconds()
+                            q_start = st.session_state.get("current_question_start")
+                            if isinstance(q_start, datetime.datetime):
+                                elapsed_q = (now - q_start).total_seconds()
+                            else:
+                                elapsed_q = 0.0
 
                             record_question_result(username, q, False, elapsed_q)
                             update_area_stats(q["영역"], False)
                             st.session_state["quiz_total_count"] += 1
-                            st.session_state["answered_current"] = True
-                            st.session_state["last_choice"] = None
 
-                            result_placeholder.warning("모르겠다고 선택했습니다. 정답과 해설을 확인하세요.")
-                            explanation_placeholder.info(
-                                f"정답: {q['정답']}번 - {options[int(q['정답'])-1]}\n\n"
-                                f"해설:\n\n{q['해설']}"
-                            )
-                            next_button_placeholder.button(
-                                "다음 문제로 이동",
-                                on_click=go_next_question,
-                                key="next_after_skip"
-                            )
+                            st.session_state["last_submit_state"] = {
+                                "is_correct": False,
+                                "options": options,
+                            }
+                            st.rerun()
 
-                    # ---- 그만 풀게요 ----
+                    # --------- 그만 풀게요 ---------
                     with col_btn3:
                         if st.button("그만 풀게요"):
                             finalize_session(username)
-                            score = st.session_state["quiz_score"]
-                            total = st.session_state["quiz_total_count"]
-                            correct = st.session_state["quiz_correct_count"]
-                            acc = (correct / total * 100) if total > 0 else 0
-
                             init_quiz_state()
                             st.info("수고했습니다. 다음 회차에 도전하세요.")
-                            if score >= 80 and acc >= 80:
-                                st.success(
-                                    "축하합니다 우수 성취학생으로 선정합니다. "
-                                    "박호종 선생님에게 뛰어가 간식을 사달라 하세요!"
-                                )
-                            if st.button("첫 화면으로 돌아가기", key="back_after_stop"):
-                                st.rerun()
+                            st.rerun()
 
-    # ------------- 메뉴 2: 오답노트 -------------
+                    # 점수에 따른 자동 종료 메시지
+                    if st.session_state["quiz_score"] >= 100:
+                        finalize_session(username)
+                        init_quiz_state()
+                        st.success("100점을 달성했습니다. 수고했습니다. 다음 회차에 도전하세요.")
+                        st.rerun()
+
+    # -----------------------------------------------------
+    # 7-2. 오답노트
+    # -----------------------------------------------------
     elif menu == "오답노트":
         st.subheader("오답노트 & 전체 통계")
+
         df_log = load_quiz_log()
         if df_log.empty:
             st.info("아직 푼 문제가 없어 오답노트가 없습니다.")
@@ -746,6 +695,9 @@ else:
 
                 if len(wrong_ids) > 0:
                     wrong_questions = questions_df[questions_df["문항ID"].isin(wrong_ids)]
+                    # 최근 틀린 순서대로 정렬
+                    wrong_questions = wrong_questions.set_index("문항ID").loc[wrong_ids].reset_index()
+
                     for _, row in wrong_questions.iterrows():
                         st.markdown("---")
                         st.markdown(
@@ -758,6 +710,7 @@ else:
                         st.markdown(f"- 4) {row['선지4']}")
                         st.info(f"정답: {row['정답']}번 | 해설: {row['해설']}")
 
+                # 전체 학생 통계
                 st.markdown("---")
                 st.markdown("### 전체 학생 통계 (누적)")
 
@@ -779,16 +732,19 @@ else:
 
                 area_summary = df_log.groupby("영역").agg(
                     total=("정답여부", "count"),
-                    correct=("정답여부", "sum")
+                    correct=("정답여부", "sum"),
                 )
                 area_summary["정답률(%)"] = area_summary["correct"] / area_summary["total"] * 100
                 area_summary["오답률(%)"] = 100 - area_summary["정답률(%)"]
                 st.markdown("#### 영역별 오답률 상위 영역")
                 st.dataframe(area_summary.sort_values("오답률(%)", ascending=False))
 
-    # ------------- 메뉴 3: 내 성취 분석 -------------
+    # -----------------------------------------------------
+    # 7-3. 내 성취 분석
+    # -----------------------------------------------------
     elif menu == "내 성취 분석":
         st.subheader("내 성취 분석")
+
         df_log = load_quiz_log()
         df_sess = load_quiz_sessions()
 
@@ -800,18 +756,39 @@ else:
         else:
             if not user_sess.empty:
                 st.markdown("### 회차별 성적")
-                st.dataframe(user_sess)
+                st.dataframe(user_sess.sort_values("시작시각", ascending=False))
 
             if not user_log.empty:
                 st.markdown("### 영역별 강점/취약 영역")
                 area_stat = user_log.groupby("영역").agg(
                     total=("정답여부", "count"),
-                    correct=("정답여부", "sum")
+                    correct=("정답여부", "sum"),
+                    score=("득점", "sum"),
                 )
                 area_stat["정답률(%)"] = area_stat["correct"] / area_stat["total"] * 100
-                st.dataframe(area_stat.sort_values("정답률(%)", ascending=False))
+                area_stat = area_stat.sort_values("정답률(%)", ascending=False)
+                st.dataframe(area_stat)
 
-# ---------------- 화면 좌측 하단 '제작자' 표시 ----------------
+                st.markdown("#### 난도별 성취도")
+                diff_stat = user_log.groupby("난도").agg(
+                    total=("정답여부", "count"),
+                    correct=("정답여부", "sum"),
+                    score=("득점", "sum"),
+                )
+                diff_stat["정답률(%)"] = diff_stat["correct"] / diff_stat["total"] * 100
+                st.dataframe(diff_stat.sort_values("난도"))
+
+                # 간단 코멘트
+                best_area = area_stat["정답률(%)"].idxmax()
+                worst_area = area_stat["정답률(%)"].idxmin()
+                st.markdown(
+                    f"- **가장 강한 영역:** {best_area}  "
+                    f"/ **가장 취약한 영역:** {worst_area}"
+                )
+
+# =========================================================
+# 8. 화면 좌측 하단 '제작자' 표시
+# =========================================================
 st.markdown(
     """
     <div style="position: fixed; bottom: 10px; left: 260px;
