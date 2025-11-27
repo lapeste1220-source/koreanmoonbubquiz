@@ -169,6 +169,7 @@ def delete_user(target_username):
 
 # ---------------- 퀴즈 관련 유틸 ----------------
 def init_quiz_state():
+    """퀴즈 관련 모든 세션 상태를 완전히 초기화."""
     st.session_state["quiz_in_progress"] = False
     st.session_state["current_question"] = None
     st.session_state["current_session_id"] = None
@@ -178,6 +179,9 @@ def init_quiz_state():
     st.session_state["quiz_area_stats"] = {}
     st.session_state["quiz_start_time"] = None
     st.session_state["current_question_start"] = None
+    # ➜ 새 회차 시작 시 이전 문항 상태가 남지 않도록 초기화
+    st.session_state["answered_current"] = False
+    st.session_state["last_choice"] = None
 
 
 def start_new_session():
@@ -593,7 +597,7 @@ else:
                         )
                     else:
                         # 이미 정답 제출 후에는 선택 불가능하게
-                        user_choice = st.session_state.get("last_choice", 1)
+                        user_choice = st.session_state.get("last_choice", 1) or 1
                         st.radio(
                             "정답을 고르세요.",
                             options=list(range(1, 5)),
@@ -612,6 +616,7 @@ else:
                         st.session_state["current_question"] = None
                         st.session_state["current_question_start"] = None
                         st.session_state["answered_current"] = False
+                        st.session_state["last_choice"] = None
                         st.rerun()
 
                     # ---- 정답 제출 버튼 ----
