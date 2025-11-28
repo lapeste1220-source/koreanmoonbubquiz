@@ -20,7 +20,7 @@ TODAY_STR = datetime.date.today().isoformat()
 # ---------------- 파일 경로 ----------------
 QUESTIONS_FILE = Path("questions.csv")
 USERS_FILE = Path("users.csv")
-QUIZ_LOG_FILE = Path("quiz_log.csv")          # 문항별 풀이 기록
+QUIZ_LOG_FILE = Path("quiz_log.csv")            # 문항별 풀이 기록
 QUIZ_SESSIONS_FILE = Path("quiz_sessions.csv")  # 회차별 기록
 
 # 관리자 비밀번호
@@ -601,65 +601,57 @@ else:
                     # --------- 정답 제출 ---------
                     with col_btn1:
                         if st.button("정답 제출"):
-                            correct_answer = int(q["정답"])
-                            is_correct = (user_choice == correct_answer)
-
-                            now = datetime.datetime.now()
-                            q_start = st.session_state.get("current_question_start")
-                            if isinstance(q_start, datetime.datetime):
-                                elapsed_q = (now - q_start).total_seconds()
+                            # 이미 채점된 상태라면 추가 기록 방지
+                            if st.session_state.get("last_submit_state") is not None:
+                                st.warning("이미 이 문항은 채점되었습니다. 아래 '다음 문제로' 버튼을 눌러 주세요.")
                             else:
-                                elapsed_q = 0.0
+                                correct_answer = int(q["정답"])
+                                is_correct = (user_choice == correct_answer)
 
-                            record_question_result(username, q, is_correct, elapsed_q)
-                            update_area_stats(q["영역"], is_correct)
+                                now = datetime.datetime.now()
+                                q_start = st.session_state.get("current_question_start")
+                                if isinstance(q_start, datetime.datetime):
+                                    elapsed_q = (now - q_start).total_seconds()
+                                else:
+                                    elapsed_q = 0.0
 
-                            st.session_state["quiz_total_count"] += 1
-                            if is_correct:
-                                st.session_state["quiz_correct_count"] += 1
-                                st.session_state["quiz_score"] += DIFFICULTY_SCORE.get(
-                                    str(q["난도"]), 1
-                                )
+                                record_question_result(username, q, is_correct, elapsed_q)
+                                update_area_stats(q["영역"], is_correct)
 
-                            # 최근 제출 상태 저장 (설명/다음문제 버튼을 위한 정보)
-                            st.session_state["last_submit_state"] = {
-                                "is_correct": is_correct,
-                                "options": options,
-                            }
+                                st.session_state["quiz_total_count"] += 1
+                                if is_correct:
+                                    st.session_state["quiz_correct_count"] += 1
+                                    st.session_state["quiz_score"] += DIFFICULTY_SCORE.get(
+                                        str(q["난도"]), 1
+                                    )
 
-                        # 제출 후 결과/해설 표시
-                        submit_state = st.session_state.get("last_submit_state")
-                        if submit_state is not None:
-                            if submit_state["is_correct"]:
-                                result_placeholder.success("정답입니다! 👏")
-                            else:
-                                result_placeholder.error("틀렸습니다. 정답과 해설을 확인하세요.")
-
-                            # 해설 표시
-                            ca = int(q["정답"])
-                            explanation_placeholder.info(
-                                f"정답: {ca}번 - {options[ca-1]}\n\n해설:\n\n{q['해설']}"
-                            )
+                                st.session_state["last_submit_state"] = {
+                                    "is_correct": is_correct,
+                                    "options": options,
+                                }
 
                     # --------- 모르겠어요 (정답 보기) ---------
                     with col_btn2:
                         if st.button("모르겠어요 (정답 보기)"):
-                            now = datetime.datetime.now()
-                            q_start = st.session_state.get("current_question_start")
-                            if isinstance(q_start, datetime.datetime):
-                                elapsed_q = (now - q_start).total_seconds()
+                            if st.session_state.get("last_submit_state") is not None:
+                                st.warning("이미 이 문항은 채점되었습니다. 아래 '다음 문제로' 버튼을 눌러 주세요.")
                             else:
-                                elapsed_q = 0.0
+                                now = datetime.datetime.now()
+                                q_start = st.session_state.get("current_question_start")
+                                if isinstance(q_start, datetime.datetime):
+                                    elapsed_q = (now - q_start).total_seconds()
+                                else:
+                                    elapsed_q = 0.0
 
-                            record_question_result(username, q, False, elapsed_q)
-                            update_area_stats(q["영역"], False)
-                            st.session_state["quiz_total_count"] += 1
+                                record_question_result(username, q, False, elapsed_q)
+                                update_area_stats(q["영역"], False)
+                                st.session_state["quiz_total_count"] += 1
 
-                            st.session_state["last_submit_state"] = {
-                                "is_correct": False,
-                                "options": options,
-                            }
-                            st.rerun()
+                                st.session_state["last_submit_state"] = {
+                                    "is_correct": False,
+                                    "options": options,
+                                }
+                                st.rerun()
 
                     # --------- 그만 풀게요 ---------
                     with col_btn3:
@@ -667,6 +659,26 @@ else:
                             finalize_session(username)
                             init_quiz_state()
                             st.info("수고했습니다. 다음 회차에 도전하세요.")
+                            st.rerun()
+
+                    # 채점 결과 / 해설 표시
+                    submit_state = st.session_state.get("last_submit_state")
+                    if submit_state is not None:
+                        if submit_state["is_correct"]:
+                            result_placeholder.success("정답입니다! 👏")
+                        else:
+                            result_placeholder.error("틀렸습니다. 정답과 해설을 확인하세요.")
+
+                        ca = int(q["정답"])
+                        explanation_placeholder.info(
+                            f"정답: {ca}번 - {options[ca-1]}\n\n해설:\n\n{q['해설']}"
+                        )
+
+                        # ---- 다음 문제로 버튼 ----
+                        if st.button("다음 문제로", key="btn_next_question"):
+                            st.session_state["current_question"] = None
+                            st.session_state["current_question_start"] = None
+                            st.session_state["last_submit_state"] = None
                             st.rerun()
 
                     # 점수에 따른 자동 종료 메시지
@@ -695,7 +707,6 @@ else:
 
                 if len(wrong_ids) > 0:
                     wrong_questions = questions_df[questions_df["문항ID"].isin(wrong_ids)]
-                    # 최근 틀린 순서대로 정렬
                     wrong_questions = wrong_questions.set_index("문항ID").loc[wrong_ids].reset_index()
 
                     for _, row in wrong_questions.iterrows():
@@ -710,7 +721,6 @@ else:
                         st.markdown(f"- 4) {row['선지4']}")
                         st.info(f"정답: {row['정답']}번 | 해설: {row['해설']}")
 
-                # 전체 학생 통계
                 st.markdown("---")
                 st.markdown("### 전체 학생 통계 (누적)")
 
@@ -778,7 +788,6 @@ else:
                 diff_stat["정답률(%)"] = diff_stat["correct"] / diff_stat["total"] * 100
                 st.dataframe(diff_stat.sort_values("난도"))
 
-                # 간단 코멘트
                 best_area = area_stat["정답률(%)"].idxmax()
                 worst_area = area_stat["정답률(%)"].idxmin()
                 st.markdown(
